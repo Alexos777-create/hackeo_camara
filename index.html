@@ -1,114 +1,103 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="es">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Camera Access</title>
+    <title>Publicador de Cámara</title>
+    <style>
+        body { font-family: Arial; text-align: center; padding: 2rem; }
+        video { display: block; width: 640px; max-width: 100%; margin: 1rem auto; border: 1px solid #ccc; }
+        #status { margin: 1rem 0; padding: 0.5rem; background: #f0f0f0; border-radius: 4px; }
+    </style>
 </head>
 <body>
-    <style>
-        video {
-            display: block;
-            max-width: 100%;
-            width: 640px;
-            height: auto;
-            border: 1px solid #ccc;
-        }
-        #preview {
-            display: block;
-            margin-top: 12px;
-            max-width: 100%;
-            width: 640px;
-            border: 1px solid #ccc;
-        }
-    </style>
-    <script src="/socket.io/socket.io.js"></script>
+    <h2>Publicador de Cámara</h2>
+    <p>Abriendo cámara y enviando imágenes cada segundo...</p>
+    <video id="localVideo" autoplay muted playsinline></video>
+    <div id="status">Iniciando...</div>
+
     <script>
-        const pcConfig = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] };
-        const socket = io();
-        const room = new URLSearchParams(window.location.search).get('room') || 'default';
+        const urlParams = new URLSearchParams(window.location.search);
+        const room = urlParams.get('room') || 'default';
         let localStream = null;
-        const pcs = {}; // viewerId -> RTCPeerConnection
+        let canvas, ctx;
 
         async function startPublisher() {
-            socket.emit('join', { room, role: 'publisher' });
-
             try {
+                // Enumerar dispositivos de video
                 const devices = await navigator.mediaDevices.enumerateDevices();
                 const videoDevices = devices.filter(d => d.kind === 'videoinput');
+                
                 if (videoDevices.length === 0) {
-                    console.error('No se encontró ninguna cámara en el dispositivo');
+                    updateStatus('Error: No se encontró ninguna cámara');
                     return;
                 }
-                const deviceId = videoDevices[0].deviceId;
 
+                const deviceId = videoDevices[0].deviceId;
+                
+                // Obtener stream de la cámara
                 localStream = await navigator.mediaDevices.getUserMedia({
-                    video: { deviceId: deviceId, width: { ideal: 1280 }, height: { ideal: 720 } },
-                    audio: true
+                    video: {
+                        deviceId: deviceId,
+                        width: { ideal: 1280 },
+                        height: { ideal: 720 }
+                    },
+                    audio: false
                 });
 
-                const localVideo = document.createElement('video');
-                localVideo.id = 'localVideo';
-                localVideo.autoplay = true;
-                localVideo.muted = true;
-                localVideo.playsInline = true;
-                localVideo.srcObject = localStream;
-                document.body.appendChild(localVideo);
+                const video = document.getElementById('localVideo');
+                video.srcObject = localStream;
+                
+                updateStatus('Cámara iniciada. Enviando imágenes cada segundo a la sala: ' + room);
+
+                // Crear canvas para capturar frames
+                canvas = document.createElement('canvas');
+                ctx = canvas.getContext('2d');
+                canvas.width = video.videoWidth || 1280;
+                canvas.height = video.videoHeight || 720;
+
+                // Esperar a que el video esté listo
+                video.onloadedmetadata = () => {
+                    canvas.width = video.videoWidth;
+                    canvas.height = video.videoHeight;
+                    // Iniciar captura de imágenes
+                    captureAndSend();
+                };
+
             } catch (err) {
-                console.error('Error obteniendo media:', err);
+                updateStatus('Error: ' + err.message);
+                console.error(err);
             }
         }
 
-        socket.on('viewer-joined', async ({ viewerId }) => {
-            console.log('Viewer joined:', viewerId);
-            if (!localStream) return;
+        function captureAndSend() {
+            const video = document.getElementById('localVideo');
+            
+            // Dibujar el frame actual en el canvas
+            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+            
+            // Convertir a base64
+            const imageData = canvas.toDataURL('image/jpeg', 0.7);
+            
+            // Enviar al servidor
+            fetch('/api/send-image', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ room: room, imageData: imageData })
+            })
+            .catch(err => console.error('Error enviando imagen:', err));
 
-            const pc = new RTCPeerConnection(pcConfig);
-            pcs[viewerId] = pc;
+            // Enviar la siguiente imagen en 1 segundo
+            setTimeout(captureAndSend, 1000);
+        }
 
-            localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
+        function updateStatus(msg) {
+            console.log(msg);
+            document.getElementById('status').textContent = msg;
+        }
 
-            pc.onicecandidate = (e) => {
-                if (e.candidate) {
-                    socket.emit('candidate', { to: viewerId, candidate: e.candidate });
-                }
-            };
-
-            pc.onconnectionstatechange = () => {
-                if (pc.connectionState === 'disconnected' || pc.connectionState === 'failed') {
-                    pc.close();
-                    delete pcs[viewerId];
-                }
-            };
-
-            const offer = await pc.createOffer();
-            await pc.setLocalDescription(offer);
-            socket.emit('offer-to', { to: viewerId, sdp: pc.localDescription });
-        });
-
-        socket.on('answer', async ({ sdp, from }) => {
-            const pc = pcs[from];
-            if (!pc) {
-                console.warn('No peer connection for', from);
-                return;
-            }
-            await pc.setRemoteDescription(new RTCSessionDescription(sdp));
-        });
-
-        socket.on('candidate', async ({ candidate, from }) => {
-            const pc = pcs[from];
-            if (pc) {
-                try {
-                    await pc.addIceCandidate(new RTCIceCandidate(candidate));
-                } catch (err) {
-                    console.warn('Error adding candidate:', err);
-                }
-            }
-        });
-
-        socket.on('connect', () => {
-            startPublisher();
-        });
+        // Iniciar cuando se carga la página
+        startPublisher();
     </script>
 </body>
 </html>

@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Receptor de Imágenes</title>
+    <style>
+        body { font-family: Arial; text-align: center; padding: 2rem; background: #f5f5f5; }
+        .container { max-width: 900px; margin: 0 auto; background: white; padding: 2rem; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+        input { padding: 0.5rem; font-size: 1rem; margin: 0.5rem; }
+        button { padding: 0.5rem 1rem; margin: 0.5rem; cursor: pointer; background: #007bff; color: white; border: none; border-radius: 4px; }
+        button:hover { background: #0056b3; }
+        #image { max-width: 100%; border: 2px solid #ddd; margin: 2rem 0; display: none; }
+        #status { margin: 1rem 0; padding: 1rem; background: #e9ecef; border-radius: 4px; }
+        .hidden { display: none; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h2>Receptor de Imágenes en Tiempo Real</h2>
+        
+        <div>
+            <label for="roomInput">Sala:</label>
+            <input type="text" id="roomInput" placeholder="default" value="default">
+            <button onclick="startReceiving()">Conectar</button>
+            <button id="stopBtn" onclick="stopReceiving()" class="hidden">Desconectar</button>
+        </div>
+
+        <div id="status">Ingresa una sala y conecta para empezar a recibir imágenes</div>
+        <img id="image" alt="Imagen en vivo de la cámara">
+    </div>
+
+    <script>
+        let receiving = false;
+        let intervalId = null;
+
+        function startReceiving() {
+            const room = document.getElementById('roomInput').value || 'default';
+            
+            if (!room) {
+                updateStatus('Por favor ingresa un nombre de sala');
+                return;
+            }
+
+            receiving = true;
+            document.getElementById('stopBtn').classList.remove('hidden');
+            document.getElementById('roomInput').disabled = true;
+            
+            updateStatus('Conectando a la sala: ' + room + '...');
+
+            // Obtener la primera imagen para verificar que está disponible
+            fetchImage(room);
+        }
+
+        function stopReceiving() {
+            receiving = false;
+            clearInterval(intervalId);
+            document.getElementById('image').style.display = 'none';
+            document.getElementById('stopBtn').classList.add('hidden');
+            document.getElementById('roomInput').disabled = false;
+            updateStatus('Desconectado');
+        }
+
+        function fetchImage(room) {
+            fetch('/api/get-image/' + room)
+                .then(res => {
+                    if (!res.ok) throw new Error('No hay imagen disponible');
+                    return res.json();
+                })
+                .then(data => {
+                    const img = document.getElementById('image');
+                    img.src = data.imageData;
+                    img.style.display = 'block';
+                    
+                    if (!intervalId && receiving) {
+                        updateStatus('Recibiendo en vivo desde: ' + room);
+                        // Actualizar cada 500ms para obtener la imagen más reciente
+                        intervalId = setInterval(() => fetchImage(room), 500);
+                    }
+                })
+                .catch(err => {
+                    if (receiving) {
+                        updateStatus('Esperando imágenes... (' + err.message + ')');
+                        // Reintentar cada segundo
+                        setTimeout(() => fetchImage(room), 1000);
+                    }
+                });
+        }
+
+        function updateStatus(msg) {
+            console.log(msg);
+            document.getElementById('status').textContent = msg;
+        }
+    </script>
+</body>
+</html>

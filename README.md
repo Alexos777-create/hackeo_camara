@@ -1,13 +1,13 @@
-# WebRTC Signaling + Example Publisher/Viewer
+# Camera Streamer - Transmisión de Imágenes en Tiempo Real
 
-Este proyecto incluye un servidor de señalización simple (Node.js + socket.io) y páginas cliente para publicar la cámara (`index.html`) y para ver y grabar la transmisión (`public/viewer.html`).
+Sistema simple para capturar imágenes de cámara cada segundo y transmitirlas a otro dispositivo.
 
-IMPORTANTE: solo utilízalo con usuarios que hayan dado consentimiento explícito para transmitir su audio/video.
+**IMPORTANTE:** Solo utilízalo con usuarios que hayan dado consentimiento explícito para capturar su cámara.
 
-Requisitos:
+## Requisitos
 - Node.js 16+ (o compatible)
 
-Instalación y ejecución:
+## Instalación y ejecución
 
 ```bash
 cd path/to/nomas
@@ -15,20 +15,41 @@ npm install
 npm start
 ```
 
-Por defecto el servidor corre en `http://localhost:3000`.
+El servidor corre por defecto en `http://localhost:3000`.
 
-Uso:
-- Abre el publisher (tu página principal): `http://localhost:3000/index.html?room=miSala` y acepta la cámara/micro.
-- Abre un visor desde otro dispositivo: `https://<tu-dominio>:3000/public/viewer.html?room=miSala` (o `http://localhost:3000/public/viewer.html?room=miSala` para pruebas locales).
-- En el viewer, haz clic en "Iniciar Grabación" para capturar el video en tiempo real.
-- Haz clic en "Detener y Guardar" para terminar la grabación y enviarla al servidor.
+## Uso
 
-Las grabaciones se guardan en la carpeta `recordings/` del servidor en formato WebM.
+### Para el dispositivo que transmite la cámara:
+1. Abre: `http://localhost:3000/index.html?room=test`
+2. Acepta los permisos de cámara
+3. Las imágenes se enviarán automáticamente cada segundo al servidor
 
-Notas de despliegue:
-- Para acceso desde otros dispositivos debes desplegar `server.js` en un servidor público con HTTPS y WSS (socket.io sobre TLS). GitHub Pages no sirve como señalización, necesitas un servidor que ejecute Node.
-- Asegúrate de usar HTTPS en producción para que los navegadores permitan getUserMedia y WebRTC.
-- Las grabaciones se almacenan en el servidor en la carpeta `recordings/`.
+### Para recibir las imágenes desde otro dispositivo:
+1. Abre: `http://localhost:3000/receiver.html`
+2. Ingresa el mismo nombre de sala (ej: `test`)
+3. Haz clic en "Conectar"
+4. Verás las imágenes en tiempo real
 
-Si quieres, puedo hacer commit y push de estos archivos al repo por ti.
+## Parámetro de sala
 
+Puedes usar cualquier nombre de sala en la URL:
+- Publisher: `http://localhost:3000/index.html?room=miSala`
+- Receiver: Ingresa `miSala` en el campo de sala
+
+## Despliegue en internet
+
+Para usar desde internet, debes desplegar en un servidor Node.js público con HTTPS:
+- Heroku
+- Railway
+- Render
+- Replit
+- AWS / Google Cloud
+- DigitalOcean
+
+GitHub Pages **NO funciona** porque solo sirve archivos estáticos.
+
+Ejemplo con Replit:
+```
+https://tu-replit.repl.co/index.html?room=test
+https://tu-replit.repl.co/receiver.html
+```
