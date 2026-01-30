@@ -1,0 +1,141 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Viewer</title>
+  <style>
+    body { font-family: Arial; max-width: 800px; margin: 2rem auto; }
+    video { width: 100%; border: 1px solid #ccc; margin-bottom: 1rem; }
+    button { padding: 0.5rem 1rem; margin: 0.5rem 0; cursor: pointer; }
+    #status { margin-top: 1rem; padding: 0.5rem; background: #f0f0f0; border-radius: 4px; }
+  </style>
+</head>
+<body>
+  <h2>Viewer - Grabación de Stream</h2>
+  <video id="remoteVideo" autoplay playsinline controls></video>
+  <div>
+    <button id="recordBtn" onclick="startRecording()">Iniciar Grabación</button>
+    <button id="stopBtn" onclick="stopRecording()" disabled>Detener y Guardar</button>
+  </div>
+  <div id="status"></div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script>
+    const socket = io();
+    const urlParams = new URLSearchParams(window.location.search);
+    const room = urlParams.get('room') || 'default';
+
+    const pcConfig = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] };
+    let pc;
+    let mediaRecorder;
+    let recordedChunks = [];
+
+    socket.on('connect', () => {
+      socket.emit('join', { room, role: 'viewer' });
+      updateStatus('Conectado a la sala: ' + room);
+    });
+
+    socket.on('offer', async ({ sdp, from }) => {
+      pc = new RTCPeerConnection(pcConfig);
+      const remoteVideo = document.getElementById('remoteVideo');
+
+      pc.ontrack = (evt) => {
+        console.log('Recibiendo stream remoto');
+        remoteVideo.srcObject = evt.streams[0];
+        
+        // Inicializar MediaRecorder con el stream remoto
+        try {
+          mediaRecorder = new MediaRecorder(evt.streams[0], { mimeType: 'video/webm;codecs=vp8' });
+          mediaRecorder.ondataavailable = (e) => {
+            if (e.data.size > 0) {
+              recordedChunks.push(e.data);
+            }
+          };
+          mediaRecorder.onstop = () => {
+            const blob = new Blob(recordedChunks, { type: 'video/webm' });
+            uploadRecording(blob);
+          };
+          updateStatus('MediaRecorder listo para grabar');
+        } catch (err) {
+          console.error('Error inicializando MediaRecorder:', err);
+          updateStatus('Error: ' + err.message);
+        }
+      };
+
+      pc.onicecandidate = (e) => {
+        if (e.candidate) {
+          socket.emit('candidate', { to: from, candidate: e.candidate });
+        }
+      };
+
+      await pc.setRemoteDescription(new RTCSessionDescription(sdp));
+      const answer = await pc.createAnswer();
+      await pc.setLocalDescription(answer);
+
+      socket.emit('answer', { to: from, sdp: pc.localDescription });
+    });
+
+    socket.on('candidate', async ({ candidate }) => {
+      try {
+        if (pc) await pc.addIceCandidate(new RTCIceCandidate(candidate));
+      } catch (err) {
+        console.warn('Error adding candidate', err);
+      }
+    });
+
+    socket.on('publisher-left', () => {
+      updateStatus('El publisher se desconectó');
+      if (mediaRecorder && mediaRecorder.state === 'recording') {
+        stopRecording();
+      }
+    });
+
+    function startRecording() {
+      if (!mediaRecorder) {
+        updateStatus('No hay stream disponible para grabar');
+        return;
+      }
+      recordedChunks = [];
+      mediaRecorder.start();
+      document.getElementById('recordBtn').disabled = true;
+      document.getElementById('stopBtn').disabled = false;
+      updateStatus('Grabando...');
+    }
+
+    function stopRecording() {
+      if (mediaRecorder && mediaRecorder.state === 'recording') {
+        mediaRecorder.stop();
+        document.getElementById('recordBtn').disabled = false;
+        document.getElementById('stopBtn').disabled = true;
+        updateStatus('Deteniendo grabación...');
+      }
+    }
+
+    async function uploadRecording(blob) {
+      const formData = new FormData();
+      formData.append('video', blob, 'recording.webm');
+
+      try {
+        const response = await fetch('/upload-recording', {
+          method: 'POST',
+          body: formData
+        });
+        const result = await response.json();
+        if (result.success) {
+          updateStatus('Grabación guardada: ' + result.filename);
+        } else {
+          updateStatus('Error al guardar: ' + result.error);
+        }
+      } catch (err) {
+        updateStatus('Error de upload: ' + err.message);
+      }
+    }
+
+    function updateStatus(msg) {
+      console.log(msg);
+      document.getElementById('status').textContent = msg;
+    }
+  </script>
+</body>
+</html>
